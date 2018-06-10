@@ -49,51 +49,58 @@ S1 = 1
 W1 = tf.Variable(tf.truncated_normal([D1, D1, 3, N1], stddev=0.1))
 b1 = tf.Variable(tf.ones([N1])/10)
 
+D1p = 3
+S1p = 2
+
 layer1_weight_summary = tf.summary.image('layer1_weight', tf.transpose(W1, [3, 0, 1, 2]), max_outputs=24)
 
 D2 = 5
-N2 = 32
-S2 = 2
+N2 = 64
+S2 = 1
 W2 = tf.Variable(tf.truncated_normal([D2, D2, N1, N2], stddev=0.1))
 b2 = tf.Variable(tf.ones([N2])/10)
 
-D3 = 6
+D2p = 3
+S2p = 2
+
+D3 = 4
 N3 = 64
-S3 = 2
+S3 = 1
 W3 = tf.Variable(tf.truncated_normal([D3, D3, N2, N3], stddev=0.1))
 b3 = tf.Variable(tf.ones([N3])/10)
 
-NS = int(NX/S1/S2/S3)
+NS = int(NX/S1/S1p/S2/S2p/S3)
 F3 = int(NS**2 * N3)
 
-N4 = 200
-W4 = tf.Variable(tf.truncated_normal([F3, N4], stddev=0.1))
-b4 = tf.Variable(tf.ones([N4])/10)
+N8 = 400
+W8 = tf.Variable(tf.truncated_normal([F3, N8], stddev=0.1))
+b8 = tf.Variable(tf.ones([N8])/10)
 
-N5 = 10
-W5 = tf.Variable(tf.truncated_normal([N4, N5], stddev=0.1))
-b5 = tf.Variable(tf.ones([N5])/10)
+N9 = 10
+W9 = tf.Variable(tf.truncated_normal([N8, N9], stddev=0.1))
+b9 = tf.Variable(tf.ones([N9])/10)
 
-# for i in range(N4):
-#     W4r = tf.reshape(W4, [NS, NS, N2, N4])
-#     W4i = tf.slice(W4r, [0, 0, 0, i], [-1, -1, -1, 1])
-#     W4t = tf.transpose(W4i, [2, 0, 1, 3])
-#     tf.summary.image('layer2_weight_' + str(i), tf.reshape(W4i, [N2, NS, NS, 1]))
+# for i in range(N8):
+#     W8r = tf.reshape(W8, [NS, NS, N2, N8])
+#     W8i = tf.slice(W8r, [0, 0, 0, i], [-1, -1, -1, 1])
+#     W8t = tf.transpose(W8i, [2, 0, 1, 3])
+#     tf.summary.image('layer2_weight_' + str(i), tf.reshape(W8i, [N2, NS, NS, 1]))
 
-# N5 = 10
-# W5 = tf.Variable(tf.truncated_normal([N4, 10], stddev=0.1))
-# b5 = tf.Variable(tf.ones([10])/10)
+# N9 = 10
+# W9 = tf.Variable(tf.truncated_normal([N8, 10], stddev=0.1))
+# b9 = tf.Variable(tf.ones([10])/10)
 
 global_step = tf.Variable(0, trainable=False)
 
 L1 = tf.nn.relu(tf.nn.conv2d(Xr, W1, strides=[1, S1, S1, 1], padding='SAME') + b1)
-L2 = tf.nn.relu(tf.nn.conv2d(L1, W2, strides=[1, S2, S2, 1], padding='SAME') + b2)
-L2p = tf.nn.max_pool(L2, [1, 4, 4, 1], [1, 1, 1, 1], padding='SAME')
+L1p = tf.nn.max_pool(L1, [1, D1p, D1p, 1], [1, S1p, S1p, 1], padding='SAME')
+L2 = tf.nn.relu(tf.nn.conv2d(L1p, W2, strides=[1, S2, S2, 1], padding='SAME') + b2)
+L2p = tf.nn.max_pool(L2, [1, D2p, D2p, 1], [1, S2p, S2p, 1], padding='SAME')
 L3 = tf.nn.relu(tf.nn.conv2d(L2p, W3, strides=[1, S3, S3, 1], padding='SAME') + b3)
 L3r = tf.reshape(L3, [-1, F3])
-L4 = tf.nn.relu(tf.matmul(L3r, W4) + b4)
-L5 = tf.nn.softmax(tf.matmul(L4, W5) + b5)
-Y = L5
+L8 = tf.nn.relu(tf.matmul(L3r, W8) + b8)
+L9 = tf.nn.softmax(tf.matmul(L8, W9) + b9)
+Y = L9
 
 S_BS = 3
 batch_L0_summary = tf.summary.image('batch_L0', tf.slice(Xr, [0, 0, 0, 0], [S_BS, -1, -1, -1]))
@@ -103,8 +110,8 @@ batch_L2_1_summary = tf.summary.image('batch_L2_1', tf.slice(L2, [0, 0, 0, 0], [
 batch_L2_2_summary = tf.summary.image('batch_L2_2', tf.slice(L2, [0, 0, 0, 3], [S_BS, -1, -1, 3]))
 batch_L3_1_summary = tf.summary.image('batch_L3_1', tf.slice(L3, [0, 0, 0, 0], [S_BS, -1, -1, 3]))
 batch_L3_2_summary = tf.summary.image('batch_L3_2', tf.slice(L3, [0, 0, 0, 3], [S_BS, -1, -1, 3]))
-batch_L4_summary = tf.summary.image('batch_L4', tf.reshape(tf.slice(L4, [0, 0], [S_BS, -1]), [S_BS, 1, N4, 1]))
-batch_L5_summary = tf.summary.image('batch_L5', tf.reshape(tf.slice(L5, [0, 0], [S_BS, -1]), [S_BS, 1, N5, 1]))
+batch_L8_summary = tf.summary.image('batch_L8', tf.reshape(tf.slice(L8, [0, 0], [S_BS, -1]), [S_BS, 20, int(N8/20), 1]))
+batch_L9_summary = tf.summary.image('batch_L9', tf.reshape(tf.slice(L9, [0, 0], [S_BS, -1]), [S_BS, 1, N9, 1]))
 
 Y_ = tf.one_hot(Y_i, 10)
 cross_entropy = -tf.reduce_sum(Y_ * tf.log(Y))
@@ -130,8 +137,8 @@ summary_merged_train = tf.summary.merge([
     batch_L2_2_summary,
     batch_L3_1_summary,
     batch_L3_2_summary,
-    batch_L4_summary,
-    batch_L5_summary,
+    batch_L8_summary,
+    batch_L9_summary,
     tf.summary.scalar('accuracy', accuracy_norm),
     tf.summary.scalar('cross_entropy', cross_entropy_norm)
     ])
@@ -142,7 +149,7 @@ summary_merged_test = tf.summary.merge([
     ])
 
 def run_weights(sess):
-    for i in range(10000):
+    for i in range(3000):
         train_x, train_y = get_train_batch(100)
         train_data = {X: train_x, Y_i: train_y}
 
