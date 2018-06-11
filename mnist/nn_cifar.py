@@ -41,12 +41,30 @@ X = tf.placeholder(tf.float32, [None, 3072])
 Xr = tf.reshape(X, [-1, 3, 1024])
 Xr = tf.transpose(Xr, [0, 2, 1])
 Xr = tf.reshape(Xr, [-1, 32, 32, 3])
+
+# Data augmentation (flip left-right)
+p_flip = tf.random_uniform(shape=[], minval=0., maxval=1., dtype=tf.float32)
+Xr_f = tf.image.flip_left_right(Xr)
+Xr = tf.cond(tf.less(p_flip, 0.5), lambda: Xr, lambda: Xr_f)
+
+# Data augmentation (brightness)
+d_brightness = tf.random_uniform(shape=[], minval=-0.2, maxval=0.2, dtype=tf.float32)
+Xr = tf.image.adjust_brightness(Xr, d_brightness)
+
+# Data augmentation (contrast)
+d_contrast = tf.random_uniform(shape=[], minval=0.7, maxval=1.7, dtype=tf.float32)
+Xr = tf.image.adjust_contrast(Xr, d_contrast)
+
+Xr = tf.clip_by_value(Xr, 0., 1.)
+
 Y_i = tf.placeholder(tf.uint8, [None])
 
-D1 = 4
-N1 = 16
+p_dropout_keep = tf.placeholder(tf.float32, [])
+
+D1 = 5
+N1 = 64
 S1 = 1
-W1 = tf.Variable(tf.truncated_normal([D1, D1, 3, N1], stddev=0.1))
+W1 = tf.Variable(tf.truncated_normal([D1, D1, 3, N1], stddev=0.05))
 b1 = tf.Variable(tf.ones([N1])/10)
 
 D1p = 3
@@ -57,7 +75,7 @@ layer1_weight_summary = tf.summary.image('layer1_weight', tf.transpose(W1, [3, 0
 D2 = 5
 N2 = 64
 S2 = 1
-W2 = tf.Variable(tf.truncated_normal([D2, D2, N1, N2], stddev=0.1))
+W2 = tf.Variable(tf.truncated_normal([D2, D2, N1, N2], stddev=0.05))
 b2 = tf.Variable(tf.ones([N2])/10)
 
 D2p = 3
@@ -66,18 +84,22 @@ S2p = 2
 D3 = 4
 N3 = 64
 S3 = 1
-W3 = tf.Variable(tf.truncated_normal([D3, D3, N2, N3], stddev=0.1))
+W3 = tf.Variable(tf.truncated_normal([D3, D3, N2, N3], stddev=0.05))
 b3 = tf.Variable(tf.ones([N3])/10)
 
 NS = int(NX/S1/S1p/S2/S2p/S3)
 F3 = int(NS**2 * N3)
 
-N8 = 400
-W8 = tf.Variable(tf.truncated_normal([F3, N8], stddev=0.1))
+N7 = 200
+W7 = tf.Variable(tf.truncated_normal([F3, N7], stddev=0.05))
+b7 = tf.Variable(tf.ones([N7])/10)
+
+N8 = 100
+W8 = tf.Variable(tf.truncated_normal([N7, N8], stddev=0.05))
 b8 = tf.Variable(tf.ones([N8])/10)
 
 N9 = 10
-W9 = tf.Variable(tf.truncated_normal([N8, N9], stddev=0.1))
+W9 = tf.Variable(tf.truncated_normal([N8, N9], stddev=0.05))
 b9 = tf.Variable(tf.ones([N9])/10)
 
 # for i in range(N8):
@@ -87,10 +109,8 @@ b9 = tf.Variable(tf.ones([N9])/10)
 #     tf.summary.image('layer2_weight_' + str(i), tf.reshape(W8i, [N2, NS, NS, 1]))
 
 # N9 = 10
-# W9 = tf.Variable(tf.truncated_normal([N8, 10], stddev=0.1))
+# W9 = tf.Variable(tf.truncated_normal([N8, 10], stddev=0.05))
 # b9 = tf.Variable(tf.ones([10])/10)
-
-global_step = tf.Variable(0, trainable=False)
 
 L1 = tf.nn.relu(tf.nn.conv2d(Xr, W1, strides=[1, S1, S1, 1], padding='SAME') + b1)
 L1p = tf.nn.max_pool(L1, [1, D1p, D1p, 1], [1, S1p, S1p, 1], padding='SAME')
@@ -98,7 +118,10 @@ L2 = tf.nn.relu(tf.nn.conv2d(L1p, W2, strides=[1, S2, S2, 1], padding='SAME') + 
 L2p = tf.nn.max_pool(L2, [1, D2p, D2p, 1], [1, S2p, S2p, 1], padding='SAME')
 L3 = tf.nn.relu(tf.nn.conv2d(L2p, W3, strides=[1, S3, S3, 1], padding='SAME') + b3)
 L3r = tf.reshape(L3, [-1, F3])
-L8 = tf.nn.relu(tf.matmul(L3r, W8) + b8)
+L7 = tf.nn.relu(tf.matmul(L3r, W7) + b7)
+L7 = tf.nn.dropout(L7, p_dropout_keep)
+L8 = tf.nn.relu(tf.matmul(L7, W8) + b8)
+L8 = tf.nn.dropout(L8, p_dropout_keep)
 L9 = tf.nn.softmax(tf.matmul(L8, W9) + b9)
 Y = L9
 
@@ -110,7 +133,8 @@ batch_L2_1_summary = tf.summary.image('batch_L2_1', tf.slice(L2, [0, 0, 0, 0], [
 batch_L2_2_summary = tf.summary.image('batch_L2_2', tf.slice(L2, [0, 0, 0, 3], [S_BS, -1, -1, 3]))
 batch_L3_1_summary = tf.summary.image('batch_L3_1', tf.slice(L3, [0, 0, 0, 0], [S_BS, -1, -1, 3]))
 batch_L3_2_summary = tf.summary.image('batch_L3_2', tf.slice(L3, [0, 0, 0, 3], [S_BS, -1, -1, 3]))
-batch_L8_summary = tf.summary.image('batch_L8', tf.reshape(tf.slice(L8, [0, 0], [S_BS, -1]), [S_BS, 20, int(N8/20), 1]))
+batch_L7_summary = tf.summary.image('batch_L7', tf.reshape(tf.slice(L7, [0, 0], [S_BS, -1]), [S_BS, 10, int(N7/10), 1]))
+batch_L8_summary = tf.summary.image('batch_L8', tf.reshape(tf.slice(L8, [0, 0], [S_BS, -1]), [S_BS, 10, int(N8/10), 1]))
 batch_L9_summary = tf.summary.image('batch_L9', tf.reshape(tf.slice(L9, [0, 0], [S_BS, -1]), [S_BS, 1, N9, 1]))
 
 Y_ = tf.one_hot(Y_i, 10)
@@ -119,10 +143,16 @@ cross_entropy = -tf.reduce_sum(Y_ * tf.log(Y))
 is_correct = tf.equal(tf.argmax(Y, 1), tf.argmax(Y_, 1))
 accuracy = tf.reduce_sum(tf.cast(is_correct, tf.float32))
 
+global_step = tf.Variable(0, trainable=False)
+global_step_inc = global_step.assign(global_step + 1)
+
 learning_rate_start = 0.0003
-learning_rate = tf.train.exponential_decay(learning_rate_start, global_step, 5000, 0.97, staircase=True)
+learning_rate = tf.train.exponential_decay(learning_rate_start, global_step, 500, 0.96, staircase=True)
 optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
-train_step = optimizer.minimize(cross_entropy, global_step=global_step)
+train_step = optimizer.minimize(cross_entropy)
+# gradients, variables = zip(*optimizer.compute_gradients(cross_entropy))
+# gradients, _ = tf.clip_by_global_norm(gradients, 3.0)
+# train_step = optimizer.apply_gradients(zip(gradients, variables))
 
 batch_size = tf.cast(tf.shape(Y_i)[0], tf.float32)
 accuracy_norm = accuracy / batch_size
@@ -137,6 +167,7 @@ summary_merged_train = tf.summary.merge([
     batch_L2_2_summary,
     batch_L3_1_summary,
     batch_L3_2_summary,
+    batch_L7_summary,
     batch_L8_summary,
     batch_L9_summary,
     tf.summary.scalar('accuracy', accuracy_norm),
@@ -148,10 +179,10 @@ summary_merged_test = tf.summary.merge([
     tf.summary.scalar('cross_entropy_test', cross_entropy_norm)
     ])
 
-def run_weights(sess):
-    for i in range(3000):
+def run_weights(sess, iterations):
+    for i in range(iterations):
         train_x, train_y = get_train_batch(100)
-        train_data = {X: train_x, Y_i: train_y}
+        train_data = {X: train_x, Y_i: train_y, p_dropout_keep: 0.5}
 
         sess.run(train_step, feed_dict=train_data)
 
@@ -159,10 +190,12 @@ def run_weights(sess):
 
         summary_writer.add_summary(train_s, i)
 
-        test_data = {X: test_batch[0], Y_i: test_batch[1]}
+        test_data = {X: test_batch[0], Y_i: test_batch[1], p_dropout_keep: 1.}
         test_a, test_c, test_s = sess.run([accuracy_norm, cross_entropy_norm, summary_merged_test], feed_dict=test_data)
 
         summary_writer.add_summary(test_s, i)
+
+        sess.run(global_step_inc)
 
         print('{0}\tTest A: {1}.\tCE: {2}\tTrain A: {3}.\tCE: {4}'.format(i, test_a, test_c, train_a, train_c))
 
@@ -170,7 +203,7 @@ def run_weights(sess):
 # image objective
 #
 
-def run_image(sess):
+def run_image(sess, iterations):
     ()
 
 #
@@ -186,15 +219,16 @@ summary_writer.add_graph(sess.graph)
 
 objectivename = sys.argv[1] if len(sys.argv) > 1 else 'weights'
 saverestoreaction = sys.argv[2] if len(sys.argv) > 2 else ''
-saverestorename = sys.argv[3] if len(sys.argv) > 3 else 'model.ckpt'
+saverestorename = sys.argv[3] if len(sys.argv) > 3 else './model.ckpt'
+iterations = int(sys.argv[4]) if len(sys.argv) > 4 else 10000
 
 if saverestoreaction == 'r' or saverestoreaction == 'rs':
     saver.restore(sess, saverestorename)
 
 if objectivename == 'weights':
-    run_weights(sess)
+    run_weights(sess, iterations)
 elif objectivename == 'image':
-    run_image(sess)
+    run_image(sess, iterations)
 
 if saverestoreaction == 's' or saverestoreaction == 'rs':
     save_path = saver.save(sess, saverestorename)
